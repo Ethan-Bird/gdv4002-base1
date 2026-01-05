@@ -116,8 +116,8 @@ void myUpdate(GLFWwindow* window, double tDelta)
 {
 	GameObjectCollection astroids = getObjectCollection("astroid"); // get all astroid objects
 
-	float wrapX = 2.2f;
-	float wrapY = 2.2f;
+	float wrapX = 2.5f;
+	float wrapY = 2.5f;
 
 	for (int i = 0; i < astroids.objectCount; i++)
 	{
