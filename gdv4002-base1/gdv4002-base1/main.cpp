@@ -6,12 +6,45 @@
 // Function prototypes
 void myUpdate(GLFWwindow* window, double tDelta);
 
-float enemyPhase[3] = { 0.0f, 0.0f, 0.0f };
-float enemyPhaseVelocity[3] = { glm::radians(90.0f), glm::radians(90.0f), glm::radians(90.0f) };
-
 void myKeyboardHandler(GLFWwindow* window, int key, int scancode, int action, int mods);
 
 std::bitset<5> keys{ 0x0 };
+
+//commented gravity, dont wish to use in current state
+//glm::vec2 gravity = glm::vec2(0.0f, -1.0f);
+
+// Astroid physics
+glm::vec2 astroidVelocity[3] =
+{
+	glm::vec2(0.6f, 0.2f), glm::vec2(-0.4f, 0.5f), glm::vec2(0.3f, -0.6f)
+};
+
+float astroidRotVelocity[3] =
+{
+	glm::radians(45.0f), glm::radians(-90.0f), glm::radians(60.0f)
+};
+
+//bullets
+const int MAX_BULLETS = 32;
+
+glm::vec2 bulletVelocity[MAX_BULLETS];
+bool bulletAlive[MAX_BULLETS] = { false };
+
+float bulletSpeed = 3.0f;
+float bulletCooldown = 0.2f;   // seconds between shots
+float bulletTimer = 0.0f;      // counts down to 0
+
+void killBullet(int b)
+{
+	bulletAlive[b] = false;
+	bulletVelocity[b] = glm::vec2(0.0f, 0.0f); // reset
+	std::string bulletName = "bullet" + std::to_string(b);
+	GameObject2D* bullet = getObject(bulletName.c_str());
+	if (bullet)
+		bullet->position = glm::vec2(9999.0f, 9999.0f); // park off-screen
+}
+
+
 
 int main(void) {
 
@@ -27,16 +60,37 @@ int main(void) {
 	}
 
 	//
+	// Setup rendering properties (enable blending)
+	//
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthFunc(GL_ALWAYS);
+
+
+	//
 	// Setup game scene objects here
+
+	addObject("background", glm::vec2(0.0f, 0.0f), 0.0f, glm::vec2(5.0f, 5.0f), "Resources\\Textures\\background_stars.png", TextureProperties::NearestFilterTexture()
+	);
+
+
+	for (int b = 0; b < MAX_BULLETS; b++) // pre-create bullet objects
+	{
+		std::string bulletName = "bullet" + std::to_string(b);
+
+		addObject(bulletName.c_str(), glm::vec2(9999.0f, 9999.0f), 0.0f, glm::vec2(0.15f, 0.15f), "Resources\\Textures\\laser.png", TextureProperties::NearestFilterTexture());
+	}
+
+	addObject("player", glm::vec2(-1.5f, 0.0f), 0.0f, glm::vec2(0.5f, 0.5f), "Resources\\Textures\\ship_1.png", TextureProperties::NearestFilterTexture());
+
+	addObject("astroid", glm::vec2(0.0f, 0.0f), 0.0f, glm::vec2(0.75f, 0.75f), "Resources\\Textures\\asteroid.png", TextureProperties::NearestFilterTexture());
+
+	addObject("astroid", glm::vec2(1.0f, 0.0f), 0.0f, glm::vec2(0.75f, 0.75f), "Resources\\Textures\\asteroid.png", TextureProperties::NearestFilterTexture());
+
+	addObject("astroid", glm::vec2(2.0f, 0.0f), 0.0f, glm::vec2(0.75f, 0.75f), "Resources\\Textures\\asteroid.png", TextureProperties::NearestFilterTexture());
+
 	
 
-	addObject("player", glm::vec2(-1.5f, 0.0f), 0.0f, glm::vec2(0.5f, 0.5f), "Resources\\Textures\\player1_ship.png");
-
-	addObject("enemy", glm::vec2(0.0f, 0.0f), 0.0f, glm::vec2(0.75f, 0.75f), "Resources\\Textures\\alien01.png");
-
-	addObject("enemy", glm::vec2(1.0f, 0.0f), 0.0f, glm::vec2(0.75f, 0.75f), "Resources\\Textures\\alien01.png");
-
-	addObject("enemy", glm::vec2(2.0f, 0.0f), 0.0f, glm::vec2(0.75f, 0.75f), "Resources\\Textures\\alien01.png");
 
 
 
@@ -60,40 +114,144 @@ int main(void) {
 
 void myUpdate(GLFWwindow* window, double tDelta)
 {
-	GameObjectCollection enemies = getObjectCollection("enemy");
+	GameObjectCollection astroids = getObjectCollection("astroid"); // get all astroid objects
 
-	for (int i = 0; i < enemies.objectCount; i++) {
+	float wrapX = 2.2f;
+	float wrapY = 2.2f;
 
-		enemies.objectArray[i]->position.y = sinf(enemyPhase[i]); // assume phase stored in radians so no conversion needed
+	for (int i = 0; i < astroids.objectCount; i++)
+	{
+		astroids.objectArray[i]->position += astroidVelocity[i] * (float)tDelta; // Move asteroid using its velocity
 
-		enemyPhase[i] += enemyPhaseVelocity[i] * tDelta;
+		astroids.objectArray[i]->orientation += astroidRotVelocity[i] * (float)tDelta; // Rotate asteroid
+
+		if (astroids.objectArray[i]->position.x > wrapX) // Screen wrap (X)
+			astroids.objectArray[i]->position.x = -wrapX;
+		else if (astroids.objectArray[i]->position.x < -wrapX)
+			astroids.objectArray[i]->position.x = wrapX;
+
+		if (astroids.objectArray[i]->position.y > wrapY) // Screen wrap (Y)
+			astroids.objectArray[i]->position.y = -wrapY;
+		else if (astroids.objectArray[i]->position.y < -wrapY)
+			astroids.objectArray[i]->position.y = wrapY;
 	}
+
+	
 
 	static float playerSpeed = 1.0f; // distance per second
 
-	GameObject2D* player = getObject("player");
+	GameObject2D* player = getObject("player"); 
 
-	if (keys.test(Key::W) == true) {
+	static glm::vec2 playerVelocity(0.0f, 0.0f); // initial velocity
+	static float acceleration = 2.0f; // units per second squared
+	static float maxSpeed = 1.5f; // max speed
+	float rotationSpeed = glm::radians(180.0f); // degrees per second
+	float dragPerSecond = 1.0f;  // adds drag
 
-		player->position.y += playerSpeed * (float)tDelta;
+
+	//if gravity is to be used, remove comment from below line
+	//playerVelocity += gravity * (float)tDelta;
+
+
+	if (keys.test(Key::W))
+	{
+		glm::vec2 forward(cos(player->orientation), sin(player->orientation)); // calculate forward vector
+		playerVelocity += forward * acceleration * (float)tDelta; // accelerate forward
+
 	}
 
-	if (keys.test(Key::S) == true) {
 
-		player->position.y -= playerSpeed * (float)tDelta;
+	if (keys.test(Key::S))
+	{
+		glm::vec2 backward(cos(player->orientation), sin(player->orientation)); // calculate backward vector
+		playerVelocity -= backward * acceleration * (float)tDelta; // accelerate backward
 	}
 
-	if (keys.test(Key::A) == true) {
+	float dragFactor = 1.0f / (1.0f + dragPerSecond * (float)tDelta); //drag to player
+	playerVelocity *= dragFactor;
 
-		player->position.x -= playerSpeed * (float)tDelta;
+
+	if (glm::length(playerVelocity) > maxSpeed)
+	{
+		playerVelocity = glm::normalize(playerVelocity) * maxSpeed; // clamp to max speed
 	}
 
-	if (keys.test(Key::D) == true) {
+	player->position += playerVelocity * (float)tDelta; // update position based on velocity
 
-		player->position.x += playerSpeed * (float)tDelta;
+	if (keys.test(Key::A)) 
+		player->orientation += rotationSpeed * (float)tDelta; // rotate left
+
+	if (keys.test(Key::D))
+		player->orientation -= rotationSpeed * (float)tDelta; // rotate right
+
+	bulletTimer -= (float)tDelta;
+
+	if (keys.test(Key::SPACE) && bulletTimer <= 0.0f)
+	{
+		glm::vec2 forward(cos(player->orientation), sin(player->orientation));
+
+		for (int b = 0; b < MAX_BULLETS; b++)
+		{
+			if (!bulletAlive[b])
+			{
+				bulletAlive[b] = true;
+				bulletVelocity[b] = forward * bulletSpeed;
+
+				std::string bulletName = "bullet" + std::to_string(b);
+				GameObject2D* bullet = getObject(bulletName.c_str());
+
+				if (bullet != nullptr)
+				{
+					bullet->position = player->position; // spawn at player
+					bullet->orientation = player->orientation; // match player orientation
+				}
+
+				bulletTimer = bulletCooldown;
+				break;
+			}
+		}
+	}
+
+	for (int b = 0; b < MAX_BULLETS; b++)
+	{
+		if (!bulletAlive[b]) continue;
+
+		std::string bulletName = "bullet" + std::to_string(b);
+		GameObject2D* bullet = getObject(bulletName.c_str());
+
+		if (bullet == nullptr)
+		{
+			bulletAlive[b] = false;
+			bulletVelocity[b] = glm::vec2(0.0f, 0.0f);
+			continue;
+		}
+
+
+		// Move bullet
+		bullet->position += bulletVelocity[b] * (float)tDelta;
+
+		float bulletKillMargin = 0.3f; // extra distance before killing bullet
+
+		if (bullet->position.x > (wrapX + bulletKillMargin) || bullet->position.x < (-wrapX - bulletKillMargin) ||
+			bullet->position.y > (wrapY + bulletKillMargin) || bullet->position.y < (-wrapY - bulletKillMargin))
+		{
+			killBullet(b);
+			continue;
+		}
+
+
 	}
 
 
+	if (player->position.x > wrapX)
+		player->position.x = -wrapX;
+	else if (player->position.x < -wrapX)
+		player->position.x = wrapX;
+
+	if (player->position.y > wrapY)
+		player->position.y = -wrapY;
+	else if (player->position.y < -wrapY)
+		player->position.y = wrapY;
 
 }
 
